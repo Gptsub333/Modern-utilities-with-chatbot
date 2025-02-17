@@ -108,5 +108,9 @@ app.post("/sms-receive", express.urlencoded({ extended: true }), (req, res) => {
 });
 
 // Start Server
+app.get("/", (req, res)=>{
+
+    res.send("Hey there!");
+})
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
