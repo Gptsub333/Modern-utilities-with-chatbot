@@ -1,68 +1,53 @@
 import React, { useState, useEffect } from "react";
-import { io } from "socket.io-client";
+import io from "socket.io-client";
+import axios from "axios";
 
-const API_URL = import.meta.env.VITE_NGROK_URL || "http://localhost:5000"; 
+const socket = io("http://localhost:5000");
 
-export default function Chatbot() {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [socket, setSocket] = useState(null);
+const Chatbot = () => {
+    const [user, setUser] = useState({ name: "", phone: "", email: "", message: "" });
+    const [chat, setChat] = useState([]);
+    const [submitted, setSubmitted] = useState(false);
 
-  useEffect(() => {
-    console.log("🌐 Connecting to WebSocket at:", API_URL);
+    useEffect(() => {
+        if (user.phone) {
+            socket.emit("join", user.phone);
+            socket.on(`reply-${user.phone}`, (data) => {
+                setChat(prevChat => [...prevChat, { sender: "owner", message: data.message }]);
+            });
 
-    const newSocket = io(API_URL, {
-      transports: ["websocket", "polling"], // Allow WebSocket fallback
-      withCredentials: true,
-      path: "/socket.io/",
-    });
+            return () => socket.off(`reply-${user.phone}`);
+        }
+    }, [user.phone]);
 
-    newSocket.on("connect", () => console.log("✅ Connected to WebSocket"));
-    newSocket.on("connect_error", (err) => console.error("❌ WebSocket Error:", err));
-    newSocket.on("receiveMessage", (data) => setMessages((prev) => [...prev, data]));
-
-    setSocket(newSocket);
-
-    return () => {
-      newSocket.disconnect();
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        await axios.post("http://localhost:5000/send-message", user);
+        setChat([{ sender: "user", message: user.message }]);
+        setSubmitted(true);
     };
-  }, []);
 
-  const sendMessage = (message) => {
-    if (message.trim() && socket) {
-      const newMessage = { sender: "customer", message };
-      setMessages((prev) => [...prev, newMessage]);
+    return (
+        <div className="chat-container">
+            {!submitted ? (
+                <form onSubmit={handleSubmit}>
+                    <input type="text" placeholder="Name" required onChange={(e) => setUser({ ...user, name: e.target.value })} />
+                    <input type="tel" placeholder="Phone" required onChange={(e) => setUser({ ...user, phone: e.target.value })} />
+                    <input type="email" placeholder="Email" required onChange={(e) => setUser({ ...user, email: e.target.value })} />
+                    <textarea placeholder="Message" required onChange={(e) => setUser({ ...user, message: e.target.value })}></textarea>
+                    <button type="submit">Send</button>
+                </form>
+            ) : (
+                <div className="chat-box">
+                    {chat.map((msg, index) => (
+                        <p key={index} className={msg.sender === "user" ? "user-msg" : "owner-msg"}>
+                            {msg.message}
+                        </p>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
 
-      socket.emit("sendMessage", { customerId: socket.id, message });
-
-      setInput("");
-    }
-  };
-
-  return (
-    <div className="fixed bottom-4 right-4 bg-white shadow-lg rounded-lg w-96 p-4">
-      <div className="h-72 overflow-y-auto border-b">
-        {messages.map((msg, index) => (
-          <div key={index} className={`p-2 ${msg.sender === "customer" ? "text-right" : "text-left"}`}>
-            <span className={`px-3 py-1 rounded-lg ${msg.sender === "customer" ? "bg-blue-500 text-white" : "bg-gray-200"}`}>
-              {msg.message}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {["What are your business hours?", "Do you offer discounts?", "What services do you offer?"].map((question, index) => (
-          <button key={index} onClick={() => sendMessage(question)} className="text-sm bg-gray-200 hover:bg-gray-300 rounded-lg px-3 py-2">
-            {question}
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-3 flex">
-        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Type a message..." className="flex-1 p-2 border rounded-l-lg" />
-        <button onClick={() => sendMessage(input)} className="bg-blue-500 text-white px-4 py-2 rounded-r-lg">Send</button>
-      </div>
-    </div>
-  );
-}
+export default Chatbot;
