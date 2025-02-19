@@ -60,10 +60,38 @@ app.post("/send-message", async (req, res) => {
         res.status(200).json({ success: true, message: "Message sent successfully" });
 
     } catch (error) {
-        console.error("Error sending WhatsApp message:", error.response.data);
+        console.error("Error sending WhatsApp message:", error.response?.data || error.message);
         res.status(500).json({ error: "Failed to send message" });
     }
 });
+
+// 🟢 Send Reply from Owner
+app.post("/send-reply", async (req, res) => {
+  const { phone, message, messageId } = req.body;
+
+  if (!phone || !message) {
+      return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  try {
+      // Send message to user's WhatsApp
+      await axios.post(WHATSAPP_API_URL, {
+          messaging_product: "whatsapp",
+          to: phone,
+          type: "text",
+          text: { body: message }
+      }, { headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` } });
+
+      // Emit reply to frontend (specific to user)
+      io.emit(`reply-${phone}`, { sender: "owner", message });
+
+      res.status(200).json({ success: true, message: "Reply sent successfully" });
+  } catch (error) {
+      console.error("Error sending WhatsApp reply:", error.response.data);
+      res.status(500).json({ error: "Failed to send reply" });
+  }
+});
+
 
 // 🟢 Webhook: Receive WhatsApp Replies from Owner
 app.post("/webhook", async (req, res) => {
