@@ -22,19 +22,23 @@ const WHATSAPP_API_URL = process.env.WHATSAPP_API_URL;
 const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
 const OWNER_PHONE_NUMBER = process.env.OWNER_PHONE_NUMBER;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "my_secure_verify_token";
+const BACKEND_URL = process.env.BACKEND_URL; // Use the backend URL from the env
 
 // 🟢 Webhook Verification (For Meta API)
-app.get("/webhook", (req, res) => {
-    const mode = req.query["hub.mode"];
-    const token = req.query["hub.verify_token"];
-    const challenge = req.query["hub.challenge"];
+app.get('/webhook', (req, res) => {
+  console.log("Received Webhook request:", req.query);
+  
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
 
-    if (mode === "subscribe" && token === VERIFY_TOKEN) {
-        console.log("Webhook verified successfully!");
-        res.status(200).send(challenge);
-    } else {
-        res.sendStatus(403);
-    }
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+      console.log("Webhook verified successfully!");
+      res.status(200).send(challenge); 
+  } else {
+      console.log("Invalid token or mode");
+      res.sendStatus(403);
+  }
 });
 
 // 🟢 Handle User Inquiry (Sends Message to WhatsApp)
@@ -92,29 +96,19 @@ app.post("/send-reply", async (req, res) => {
   }
 });
 
-
 // 🟢 Webhook: Receive WhatsApp Replies from Owner
-app.post("/webhook", async (req, res) => {
-    console.log("Webhook received:", JSON.stringify(req.body, null, 2));
+app.get("/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
 
-    if (req.body.entry) {
-        const messageData = req.body.entry[0].changes[0].value.messages;
-
-        if (messageData) {
-            const message = messageData[0];
-            const senderNumber = message.from; // This is the WhatsApp number replying
-            const replyText = message.text.body;
-
-            if (userSessions.has(senderNumber)) {
-                userSessions.get(senderNumber).messages.push({ owner: replyText });
-
-                // Send real-time message to chatbot frontend
-                io.emit(`reply-${senderNumber}`, { sender: "owner", message: replyText });
-            }
-        }
-    }
-
-    res.sendStatus(200);
+  // Check if the mode and token match what Meta expects
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+      console.log("Webhook verified successfully!");
+      res.status(200).send(challenge); // Respond with challenge to verify
+  } else {
+      res.sendStatus(403); // Unauthorized if token doesn't match
+  }
 });
 
 // 🟢 WebSocket for Real-Time Messaging
@@ -130,4 +124,4 @@ io.on("connection", (socket) => {
     });
 });
 
-server.listen(5000, () => console.log("Server running on port 5000"));
+server.listen(5000, () => console.log(`Server running on ${BACKEND_URL || "http://localhost:5000"}`));
