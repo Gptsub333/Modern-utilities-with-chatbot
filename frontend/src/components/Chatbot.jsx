@@ -14,24 +14,54 @@ const predefinedResponses = {
 };
 
 const Chatbot = () => {
-    const [user, setUser] = useState({ name: "", phone: "", email: "", message: "" });
-    const [chat, setChat] = useState([{ sender: "bot", message: "Hi there! How can I assist you today?" }]);
+    const [user, setUser] = useState(() => {
+        const savedUser = localStorage.getItem("chat_user");
+        return savedUser ? JSON.parse(savedUser) : { name: "", phone: "", email: "", message: "" };
+    });
+
+    const [chat, setChat] = useState(() => {
+        const savedChat = localStorage.getItem("chat_history");
+        return savedChat ? JSON.parse(savedChat) : [{ sender: "bot", message: "Hi there! How can I assist you today?" }];
+    });
+
     const [submitted, setSubmitted] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
-    const [step, setStep] = useState("greeting");
+    const [step, setStep] = useState(() => localStorage.getItem("chat_step") || "greeting");
     const [replyMessage, setReplyMessage] = useState("");
     const audioRef = useRef(new Audio(notificationSound));
     const chatEndRef = useRef(null);
 
+    // Store chat and user in localStorage on update
+    useEffect(() => {
+        localStorage.setItem("chat_history", JSON.stringify(chat));
+    }, [chat]);
+
+    useEffect(() => {
+        localStorage.setItem("chat_user", JSON.stringify(user));
+    }, [user]);
+
+    useEffect(() => {
+        localStorage.setItem("chat_step", step);
+    }, [step]);
+
     useEffect(() => {
         if (user.phone) {
             socket.emit("join", user.phone);
-            socket.on(`reply-${user.phone}`, (data) => {
-                setChat(prevChat => [...prevChat, { sender: "owner", message: data.message }]);
+            
+            // Correctly format the event name
+            const eventName = `reply-${user.phone}`;
+            
+            socket.on(eventName, (data) => {
+                setChat(prevChat => {
+                    const updatedChat = [...prevChat, { sender: "owner", message: data.message }];
+                    localStorage.setItem("chat_history", JSON.stringify(updatedChat)); // Save in localStorage
+                    return updatedChat;
+                });
                 playSound();
             });
+    
             return () => {
-                socket.off(`reply-${user.phone}`);
+                socket.off(eventName); // Clean up the event listener
             };
         }
     }, [user.phone]);
@@ -45,18 +75,33 @@ const Chatbot = () => {
     };
 
     const handleUserSelection = (message) => {
-        setChat(prevChat => [...prevChat, { sender: "user", message }]);
-        setTimeout(() => {
-            setChat(prevChat => [...prevChat, { sender: "bot", message: predefinedResponses[message] }]);
-        }, 500);
+        setChat(prevChat => {
+            const updatedChat = [...prevChat, { sender: "user", message }];
+    
+            // Get bot response
+            const botResponse = { sender: "bot", message: predefinedResponses[message] };
+    
+            // Append bot response immediately (not in setTimeout)
+            const newChat = [...updatedChat, botResponse];
+    
+            // Save in localStorage
+            localStorage.setItem("chat_history", JSON.stringify(newChat));
+    
+            return newChat;
+        });
+    
         playSound();
         if (message === "Services") setStep("form");
-    };
+    };    
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         await axios.post(`${B_url}/send-message`, user);
-        setChat(prevChat => [...prevChat, { sender: "user", message: user.message }]);
+        setChat(prevChat => {
+            const updatedChat = [...prevChat, { sender: "user", message: user.message }];
+            localStorage.setItem("chat_history", JSON.stringify(updatedChat)); // Save in localStorage
+            return updatedChat;
+        });
         setSubmitted(true);
         playSound();
         setStep("greeting");
@@ -77,6 +122,15 @@ const Chatbot = () => {
         }
     };
 
+    const handleClearChat = () => {
+        setChat([{ sender: "bot", message: "Hi there! How can I assist you today?" }]);
+        setUser({ name: "", phone: "", email: "", message: "" });
+        setStep("greeting");
+        localStorage.removeItem("chat_history");
+        localStorage.removeItem("chat_user");
+        localStorage.removeItem("chat_step");
+    };
+
     return (
         <div>
             {!isOpen && (
@@ -92,7 +146,15 @@ const Chatbot = () => {
                 <div className="fixed bottom-5 right-5 w-80 sm:w-96 bg-white border rounded-lg shadow-lg h-[500px] overflow-y-auto">
                     <div className="flex items-center justify-between bg-blue-600 text-white p-3 rounded-t-lg">
                         <h2 className="text-lg font-semibold">Chatbot</h2>
-                        <button onClick={() => setIsOpen(false)} className="text-white hover:text-gray-300">
+                        <button 
+                            onClick={() => {
+                                setIsOpen(false);
+                                localStorage.removeItem("chat_history"); // Clear chat when closed
+                                localStorage.removeItem("chat_user");
+                                localStorage.removeItem("chat_step");
+                            }} 
+                            className="text-white hover:text-gray-300"
+                        >
                             <X size={22} />
                         </button>
                     </div>
@@ -107,14 +169,26 @@ const Chatbot = () => {
                         </div>
 
                         {step === "greeting" && (
-                            <div>
-                                <div className="space-y-2">
-                                    <button className="w-full bg-gray-200 p-2 rounded-md text-left" onClick={() => handleUserSelection("Learn About Us")}>Learn About Us</button>
-                                    <button className="w-full bg-gray-200 p-2 rounded-md text-left" onClick={() => handleUserSelection("See our reviews")}>See our Reviews</button>
-                                    <button className="w-full bg-gray-200 p-2 rounded-md text-left" onClick={() => handleUserSelection("Services")}>Services</button>
-                                </div>
-                            </div>
-                        )}
+    <div className="flex flex-wrap gap-2 mt-2">
+        <button 
+            className="border border-gray-400 px-3 py-1 text-sm rounded-md text-gray-700 hover:bg-gray-100 transition"
+            onClick={() => handleUserSelection("Learn About Us")}>
+            Learn About Us
+        </button>
+        <button 
+            className="border border-gray-400 px-3 py-1 text-sm rounded-md text-gray-700 hover:bg-gray-100 transition"
+            onClick={() => handleUserSelection("See our reviews")}>
+            See Reviews
+        </button>
+        <button 
+            className="border border-gray-400 px-3 py-1 text-sm rounded-md text-gray-700 hover:bg-gray-100 transition"
+            onClick={() => handleUserSelection("Services")}>
+            Services
+        </button>
+    </div>
+)}
+
+
 
                         {step === "form" && (
                             <form onSubmit={handleSubmit} className="space-y-3 mt-3">
@@ -125,6 +199,15 @@ const Chatbot = () => {
                                 <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition">Send</button>
                             </form>
                         )}
+
+<div className="mt-4">
+    <button 
+        onClick={handleClearChat} 
+        className="border border-red-500 text-red-500 px-3 py-1 text-sm rounded-md hover:bg-red-500 hover:text-white transition"
+    >
+        Clear Chat
+    </button>
+</div>
                     </div>
                 </div>
             )}
